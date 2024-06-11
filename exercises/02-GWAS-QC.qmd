@@ -17,7 +17,7 @@ execute:
   message: false
   echo: true
 csl: https://raw.githubusercontent.com/citation-style-language/styles/6152ccea8b7d7a472910d36524d1bf3557a83bfc/dependent/nature-genetics.csl
-
+bibliography: references.bib
 ---
 
 Install the following packages if you haven't already. `pak` is a useful package manager that can download/install from CRAN, Bioconductor, github, local files, etc:
@@ -26,11 +26,9 @@ Install the following packages if you haven't already. `pak` is a useful package
 install.packages("pak")
 ```
 
-
 ```{r}
 pak::pkg_install(c("tidyverse", "GWASinspector", "MungeSumstats", "rtracklayer", "vroom"), ask = FALSE)
 ```
-
 
 Load the packages into the current session using `library()`
 
@@ -40,14 +38,11 @@ library(vroom)
 library(GWASinspector)
 ```
 
-
 `tidyverse` is a collection of data science package in R, that all work well together. `GWASinspector` is a package that can be used to perform quality control on GWAS summary statistics. `MungeSumstats` is a package that can be used to harmonize GWAS summary statistics.
-
 
 ## Exercise 1 - Reading and Exploring data using `vroom()` and `glimpse()`
 
 Let's check out what GWAS summary statistics look like. We will use the `vroom::vroom()` package to load the first few lines of a file. You could also use `read_tsv()` from the `readr` package, `fread()` from the `data.table` package, or the `read_*_arrow()` functions from the `arrow` package.
-
 
 We'll start with GWAS summary statistics for heart failure from FinnGen release 7. The pipe `%>%` `|>` operators allow you to chain functions together. The `glimpse()` function will give you a quick overview of the data.
 
@@ -65,48 +60,44 @@ vroom::vroom("/project/damrauer_scratch/summary_stats/HF/RAW/MVP/MVP_R4.1000G_AG
 
 We see that the column headers are different, and they contain different information. For example, FinnGen reports their results using `beta`, which reflects the log-odds ratio, while MVP reports their results using `or`, which is the odds ratio. We will need to harmonize these columns before we can perform a meta-analysis. Both datasets are reported using the GRCh38 human genome build, but many of the downstream tools will require data on the GRCh37 build. Before meta-analysis, we'll need to make sure that all of our data are on the same genome build.
 
-Here are some of the key steps of GWAS meta-analysis:
-<https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4083217/>
+Here are some of the key steps of GWAS meta-analysis[@Winkler2014]: <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4083217/>
 
-1. Setting up logistics of Meta-analysis
-1. Collecting aggregated statistics per study
-1. File-Level QC
-1. Identification of analytical issues by the SE-N plot
-1. Identification of analytical issues by the P-Z plot
-1. Identification of problems with allele- frequencies or strand
-1. Identification of population stratification
-1. Meta-Analysis
-1. Meta-analysis QC – Compare results from two analysts
-1. Meta-analysis QC – Identify analytical issues by calculating the study-level λGC
-1. Finalizing meta-Analysis
-
+1.  Setting up logistics of Meta-analysis
+2.  Collecting aggregated statistics per study
+3.  File-Level QC
+4.  Identification of analytical issues by the SE-N plot
+5.  Identification of analytical issues by the P-Z plot
+6.  Identification of problems with allele- frequencies or strand
+7.  Identification of population stratification
+8.  Meta-Analysis
+9.  Meta-analysis QC -- Compare results from two analysts
+10. Meta-analysis QC -- Identify analytical issues by calculating the study-level λGC
+11. Finalizing meta-Analysis
 
 ## Exercise 2 - Harmonizing the data
 
 For each study, we'll want to harmonize the data. This will involve renaming columns, changing the effect size to a common metric, and ensuring that the data are on the same genome build. In general, you'll want at minimum a set of columns that look like this:
 
-- `MARKER`: A unique identifier for each variant
-- `CHROM`: The chromosome number
-- `POS`: The position of the variant
-- `EFFECT_ALLELE`: The effect allele
-- `OTHER_ALLELE`: The other allele
-- `EAF`: The effect allele frequency
-- `BETA`: The effect size
-- `SE`: The standard error of the effect size
-- `P`: The p-value
-- `N`: The total sample size
-- `N_CASE`: The number of cases (for binary traits)
-- `N_CONTROL`: The number of controls (for binary traits)
+-   `MARKER`: A unique identifier for each variant
+-   `CHROM`: The chromosome number
+-   `POS`: The position of the variant
+-   `EFFECT_ALLELE`: The effect allele
+-   `OTHER_ALLELE`: The other allele
+-   `EAF`: The effect allele frequency
+-   `BETA`: The effect size
+-   `SE`: The standard error of the effect size
+-   `P`: The p-value
+-   `N`: The total sample size
+-   `N_CASE`: The number of cases (for binary traits)
+-   `N_CONTROL`: The number of controls (for binary traits)
 
 You will need to read the original manuscript, README, and/or look at the specific software used for the underlying study to determine what columns in the summary statistics correspond to these values. For example, in some studies the `EFFECT_ALLELE` is the reference allele, while in others it is the alternate allele; in other software it may be listed as `A1`, and in others `A2`. In some studies, the `BETA` is the log-odds ratio (or beta for continuous traits), while in others it is the odds ratio. You will need to harmonize these columns before you can perform a meta-analysis.
 
-The scripts below are examples of how to harmonize the FinnGen and MVP summary statistics. In both cases, the summary statistics are on GRCh38 (hg38), but we'll use `liftOver` with a chainfile to convert them to GRCh37 (hg19). In the case of MVP, we'll also convert from odds ratio to log-odds, and back-calculate the standard error from the p-value: 
+The scripts below are examples of how to harmonize the FinnGen and MVP summary statistics. In both cases, the summary statistics are on GRCh38 (hg38), but we'll use `liftOver` with a chainfile to convert them to GRCh37 (hg19). In the case of MVP, we'll also convert from odds ratio to log-odds, and back-calculate the standard error from the p-value:
 
-$$Z=\frac{\beta}{SE}$$
-$$SE = abs(\frac{\beta}{qnorm(p_{value}/2)})$$
+$$Z=\frac{\beta}{SE}$$ $$SE = abs(\frac{\beta}{qnorm(p_{value}/2)})$$
 
 You will need to modify these scripts to work with your own data.
-
 
 ```{r}
 # Function to prep FinnGen sumstats
@@ -160,7 +151,7 @@ There are packages like `MungeSumstats` that can help with this process, but you
 
 # Exercise 3 - GWASinspector
 
-`GWASinspector` is an R package that can help you identify issues with your summary statistics. It can be used to generate a variety of plots that can help you identify issues with your data. You can install `GWASinspector` from CRAN:
+`GWASinspector`[@ani2021] is an R package that can help you identify issues with your summary statistics. It can be used to generate a variety of plots that can help you identify issues with your data. You can install `GWASinspector` from CRAN:
 
 ```{r}
 pak::pak("GWASinspector", ask = FALSE)
@@ -172,35 +163,57 @@ The goal of `GWASinpsector` is to ensure that your summary statistics are of hig
 
 The main steps of `GWASinspector` include:
 
-1. Download a reference allele dataset. The GRCh38 dbSNP dataset is available at `/project/voltron/Resources/GWAS-Inspector/dbSNP_human_9606_b151_GRCh38p7.sqlite.gz`.
-2. Create a header translation table identifies the columns in your summary statistics. It may be easiest to process your summary statistics manually (as above), and then all of your headers will be the same: 
+1.  Download a reference allele dataset. The GRCh38 dbSNP dataset is available at `/project/voltron/Resources/GWAS-Inspector/dbSNP_human_9606_b151_GRCh38p7.sqlite.gz`.
+2.  Create a header translation table identifies the columns in your summary statistics. It may be easiest to process your summary statistics manually (as above), and then all of your headers will be the same:
 
-```{.r}
+``` r
 library(GWASinspector)
 get_headerTranslation("/path/to/referenceFolder")
 ```
 
+3.  Generate a configuration file. Details of the parameters are available in the GWASinspector manual. These settings will be used to run quality control and define high-quality variants:
 
-3. Generate a configuration file. Details of the parameters are available in the GWASinspector manual. These settings will be used to run quality control and define high-quality variants: 
-
-```{.r}
+``` r
 get_config("/path/to/folder")
 ```
 
-  - You will need to add the paths to your input files, reference allele dataset, the header translation table, and output directory to the configuration file
-  - Make sure `add_column_hid = TRUE` is set so that the variants in your output have a uniform set of identifiers
-4. Run the quality control:
+-   You will need to add the paths to your input files, reference allele dataset, the header translation table, and output directory to the configuration file
+-   Make sure `add_column_hid = TRUE` is set so that the variants in your output have a uniform set of identifiers
 
-```{.r}
+4.  Run the quality control:
+
+``` r
 job <- setup_inspector("/home/user/config.ini") ## create the object
 job ## check the parameters
 job <- run_inspector(job) ## run the algorithm
 ```
 
-  - You can set the `test.run = TRUE` parameter to test the algorithm on the first 1000 rows of your data:
-  
-```{.r}
+-   You can set the `test.run = TRUE` parameter to test the algorithm on the first 1000 rows of your data:
+
+``` r
 job <- run_inspector(job, test.run = TRUE) ## run the algorithm
 ```
 
+## Quality Control Plots:
 
+Details of quality control interpretation can be found in the GWASinspector manual or in Winkler et al. (2014)[@Winkler2014] - figures included for reference: <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4083217/>
+
+### SE-N
+
+Study precision should be proportional to sample size. If the standard error is not proportional to the sample size, this may indicate issues with the data (eg. trait transformations prior to GWAS):
+
+![](../images/nihms606303f2.jpg)
+
+### P-Z plot
+
+The P-values in the GWAS file should be equivalent to p-values calculated from Z-statistics derived from the reported effect sizes and standard errors. If the p-values are not equivalent, this may indicate issues with the data (eg. trait transformations prior to GWAS):
+
+![](../images/nihms606303f3.jpg)
+
+### EAF plot
+
+The effect allele frequency (EAF) should correspond to the frequencies reported in the reference panel. If the EAFs are not equivalent, this may indicate issues with the data (eg. strand issues, allele coding issues, etc.), or differences in ancestry between the study and reference panel:
+
+![](../images/nihms606303f4.jpg)
+
+# References
