@@ -1,0 +1,422 @@
+---
+title: "Penn Genomics Summer Bootcamp"
+subtitle: "Lecture 2: File/Project Management, Introduction to R, and Quality Control of GWAS Data"
+author: 
+  - name: Michael Levin, MD
+    orcid: 0000-0002-9937-9932
+date: last-modified
+format:
+  Penn-quarto-template-revealjs:
+    auto-stretch: true
+  html:
+    code-tools: true
+    toc: true
+    toc-depth: 6
+    cap-location: top
+    self-contained: true
+    embed-resources: true
+    # fig-format: svg
+    citations-hover: true
+fig-height: 4
+execute:
+  warning: false
+  message: false
+  echo: false
+csl: https://raw.githubusercontent.com/citation-style-language/styles/6152ccea8b7d7a472910d36524d1bf3557a83bfc/dependent/nature-genetics.csl
+# bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(forestplotR)
+```
+
+## Objectives
+
+-   Develop strategies for organizing files/projects
+-   Learn how to use R for data manipulation
+-   Understand the importance of quality control in GWAS data
+
+# File/Project Management
+
+## Why is File/Project Management Important?
+
+- Genomics projects are complex:
+  - Data is often stored in multiple files, formats, locations
+  - Data is often shared between collaborators
+  - Projects contain multiple scripts, analyses, and results
+  
+- Organization facilitates reproducible research and increases productivity:
+  - Makes it easier to find and understand data
+  - Makes it easier to share data with collaborators
+  - Makes it easier to reproduce analyses
+
+
+## What is a GWAS meta-analysis?
+
+<br>
+
+### Genome-Wide Association Study (GWAS)
+- A GWAS is a study that tests for associations between genetic variants and a trait or disease
+
+```{r}
+#| fig-align: center
+#| fig-width: 4
+
+# G allele frequency 
+p <- 0.15 
+
+# HWE frequencies
+hwe_freqs <- c(p^2, 2*p*(1-p), (1-p)^2) 
+
+# Sample sizes 
+n_samples <- c(round(hwe_freqs[1]*5000), round(hwe_freqs[2]*5000), round(hwe_freqs[3]*5000))
+
+tibble(genotype = c("AA", "AC", "CC")) %>%
+    mutate(values = case_when(
+      genotype == "AA" ~ list(rnorm(n_samples[1], mean = -10, sd = 2)),
+      genotype == "AC" ~ list(rnorm(n_samples[2], mean = 0, sd = 2)),
+      genotype == "CC" ~ list(rnorm(n_samples[3], mean = 10, sd = 2))
+    )) %>%
+  unnest(values) %>%
+  ggplot(aes(genotype, values)) +
+    geom_jitter(width = 0.25, alpha = 0.25, shape = 1, aes(color = genotype)) +
+    geom_boxplot(width = 0.2, outlier.shape = NA, lwd = 0.75) +
+    ggsci::scale_color_npg() +
+    # facet_grid(cols = vars(type)) +
+  labs(x = "Genotype",
+        y = "Phenotype value") +
+  theme_bw(base_size = 24) +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+```
+
+
+## GWAS meta-analysis 
+
+- Meta-analysis is a statistical technique that combines the results of multiple studies to increase statistical power
+
+```{r}
+#| fig-height: 2
+#| fig-width: 10
+#| fig-align: center
+
+tibble::tribble(
+  ~Variant, ~Study, ~Cases, ~Controls, ~`Effect\nAllele`, ~`Other\nAllele`, ~OR, ~CI_low, ~CI_high, ~p_value,
+  "rs1234567", "Study3", 5000L, 10000L, "C", "A", 1.18, 1.1, 1.27, 3.2e-06,
+  "rs1234567", "Study2", 3500L, 7000L, "C", "A", 1.15, 1.06, 1.24, 7.8e-05,
+  "rs1234567", "Study1", 4200L, 8500L, "C", "A", 1.2, 1.12, 1.29, 1.4e-07
+) %>%
+  forestplotR::plot_forest(
+    cols_left = vars("Variant", "Study", "Cases", "Controls", "Effect\nAllele", "Other\nAllele"), effect = OR, p_value = p_value, ci_lower =
+      CI_low, ci_upper = CI_high, width_ratio = c(0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 2, 2), effect_signif = 3, ci_signif = 3
+  )
+
+```
+
+<br>
+
+... repeated for 10-40 million variants across the genome
+
+
+## A Typical GWAS Meta-Analysis Project
+
+<br>
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### Starts with:
+
+- Lots of raw data files from multiple sources:
+  - MVP, AoU, UKB, FinnGen, Biobank Japan, etc.
+
+### Ends with:
+
+- New data files and figures describing results after combining/analyzing the raw data:
+  - Manhattan plots, QQ plots, loci tables, etc.
+
+:::
+
+::: {.column width="50%"}
+![](images/Pipeline.png){width=40%}
+:::
+
+::::
+
+
+## How to stay organized?
+
+- There's no one-size-fits-all solution
+- Johns Hopkins Data Science resources for project organization: <https://jhudatascience.org/Reproducibility_in_Cancer_Informatics/organizing-your-project.html>
+
+
+## Example project structure:
+
+:::: {.columns}
+
+::: {.column width="40%"}
+
+```{.md}
+.
+├── Analysis.qmd
+├── Results.qmd
+├── Data/
+│   ├── raw_summary_statistics/
+│   │   ├── README.md
+│   │   ├── CAD_sumstats_study1.tsv
+│   │   └── CAD_sumstats_study2.tsv
+│   └── processed_summary_statistics/
+└── Results/
+    ├── manhattan_plot.png
+    ├── qq_plot.png
+    └── loci.tsv
+```
+
+:::
+
+::: {.column width="60%"}
+- `Analysis.qmd`: Document containing analysis code (process files in `Data/` and output results to `Results/`)
+- `Results.qmd`: Document that will display results (read files from `Results/` without having to re-run analysis)
+- `Data/`: Directory containing data files
+- `Results/`: Directory containing results
+:::
+
+::::
+
+Use directories and subdirectories to organize similar files together:
+
+- `Data/raw_summary_statistics/`
+- `Data/processed_summary_statistics`
+
+## README files for organization
+
+<https://data.research.cornell.edu/data-management/sharing/readme/>
+
+- README files are a simple way to document your project
+- README files can be written in plain text or markdown
+- README files might include:
+  - A description of the project
+  - A list of files, their contents, and sources
+  
+## Example README File for GWAS Summary Statistics
+
+
+```{.md}
+# CAD_sumstats_study1.tsv
+This file contains summary statistics from a GWAS on CAD conducted by the CARDIoGRAM consortium.
+Data was downloaded from the CARDIoGRAMplusC4D website (https://www.cardiogramplusc4d.org/).
+The study included 22,233 CAD cases and 64,762 controls of European ancestry.
+Genotyping was performed using the Illumina Human OmniExpress Beadchip.
+Imputation was performed using the 1000 Genomes Phase 3 reference panel.
+The file includes the following columns:
+
+SNP: rs ID of the genetic variant
+CHR: Chromosome
+POS: Base pair position (GRCh37/hg19)
+A1: Effect allele
+A2: Non-effect allele
+EAF: Effect allele frequency
+BETA: Effect size estimate
+SE: Standard error of the effect size estimate
+P: P-value for association
+```
+
+## Structured file manifest
+
+README files are often unstructured. The same information could be organized in a structured table:
+
+```{r}
+tribble(
+ ~file_name,               ~file_path,                        ~consortium, ~ancestry, ~cases, ~controls, ~genotyping_array,                   ~imputation_panel,                      ~quality_control,                                                           ~columns,                                  ~file_format,
+ "CAD_sumstats_study1.tsv", "Data/CAD_sumstats_study1.tsv",     "CARDIoGRAM", "European", 22233,  64762,    "Illumina Human OmniExpress Beadchip", "1000 Genomes Phase 1",              "MAF > 0.01, HWE p > 1e-6, imputation quality > 0.8",                       "SNP, CHR, POS, A1, A2, EAF, BETA, SE, P", "tab-separated with header",
+ "CAD_sumstats_study2.tsv", "Data/CAD_sumstats_study2.tsv",     "UK Biobank", "British",  34541, 261984,   "UK Biobank Axiom Array",             "Haplotype Reference Consortium (HRC)", "MAF > 0.01, HWE p > 1e-6, imputation quality > 0.9, sample call rate > 0.95", "SNP, CHR, POS, A1, A2, EAF, BETA, SE, P", "tab-separated with header"
+) %>%
+  knitr::kable() %>%
+  kableExtra::kable_styling(font_size = 16)
+```
+
+# Introduction to High-Performance Computing and R
+
+## High-Performance Computing
+
+- High-performance computing (HPC) refers to the use of supercomputers and computer clusters to solve complex computational problems
+- HPC systems are used for:
+  - Running large-scale simulations
+  - Analyzing large datasets
+  - Training machine learning models
+  - Running bioinformatics pipelines
+  
+## High-Performance Computing Enables Scalability and Parallelization
+
+- HPC systems are designed to scale up to thousands of cores
+- HPC systems can run multiple tasks in parallel
+
+## High-Performance Computing at Penn
+
+- Penn has several HPC resources available to researchers:
+  - High-Performance Computing cluster (HPC)
+    - Pay as you go (fixed cost per core-hour, storage)
+  - Limited-Performance Computing cluster (LPC)
+    - Supply your own server, use as much as you want (+ storage)
+
+## Introduction to the LPC
+
+<br>
+`ssh` allows you to connect to the LPC from your local machine
+
+```{.bash}
+ssh username@scisub7@pmacs.upenn.edu
+```
+
+<br>
+`cd` allows you to change directories (eg. to your home directory `~`)
+
+```{.bash}
+cd ~
+```
+
+<br>
+`mkdir` allows you to create a new directory
+
+```{.bash}
+mkdir test_project
+cd test_project
+```
+
+## LSF controls job submission and resources
+
+- `bsub` submits a job to the cluster
+- `bjobs` lists jobs
+- `bkill` kills a job
+- `bqueues` lists queues
+- `bhosts` lists hosts
+
+## Example LSF Job Submission Script
+
+<br>
+
+Create a new file called `test.sh` with the following content:
+
+```{.bash}
+#!/bin/bash
+#BSUB -J test_job
+#BSUB -n 1
+#BSUB -M 16000
+#BSUB -W 00:10
+#BSUB -o output.%J
+#BSUB -e error.%J
+
+echo "Running test job on host: $(hostname)"
+sleep 60
+echo "Test job completed."
+```
+
+<br>
+
+Send job to the scheduler using `bsub`:
+
+```{.bash}
+bsub < test.sh
+```
+
+
+## Rstudio on the LPC
+
+<https://mglev1n.github.io/damrauer-lab/rstudio.html>
+
+1. If necessary (eg. off-campus) activate your VPN to join the PMACS network
+1. Login to `scisub7` using: `ssh username@scisub7.pmacs.upenn.edu`
+1. Navigate to the `rstudio` directory in the `voltron` project folder: `cd /project/voltron/rstudio/`
+1. Execute `run_rstudio_ssh.sh` to start an interactive rstudio session: `./run_rstudio_ssh.sh` or `bash run_rstudio_ssh.sh`
+
+## RStudio on the LPC continued
+
+Each user can currently run one RStudio session at a time. Each session is created using a unique, job-specific password. The session can be accessed using any web browser. Once you execute the `run_rstudio_ssh.sh` command, you should see instructions for accessing your unique job. Sample instructions are reproduced below:
+      
+```
+Starting RStudio Server session with 1 core(s) and 16GB of RAM per core...
+
+1. Create an SSH tunnel from your local workstation to the server by executing the following command in a new terminal window:
+
+    ssh -N -L 8787:roubaix:8787 username@scisub7.pmacs.upenn.edu 
+
+2. Navigate your web browser to:
+
+    http://localhost:8787 
+
+3. Login to RStudio Server using the following credentials:
+
+    user: username 
+    password: password 
+
+When finished using RStudio Server, terminate the job:
+
+1. Exit the RStudio Session (power button in the top right corner of the RStudio window)
+2. Issue the following command on the login node (scisub7.pmacs.upenn.edu):
+
+    bkill jobid
+```
+
+## Git/Github
+
+- Git is a version control system that allows you to track changes in your code
+- Github is a web-based platform that hosts Git repositories
+- Git and Github are widely used in software development and data science
+
+<br>
+
+- RStudio has built-in support for Git and Github
+
+## RStudio and Git
+
+<https://docs.posit.co/ide/user/ide/guide/tools/version-control.html>
+
+1. Open RStudio
+
+1. Go to `File` -> `New Project` -> `Version Control` -> `Git`
+
+1. Enter the repository URL and choose a directory for the project:
+
+    - Repository URL: `https://github.com/mglev1n/Penn-Genomics-Bootcamp`
+
+1. Click `Create Project`
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# -----------------------------------------
+
+# Appendix
+
+## LSF test job
+
+<br>
+
+Create a new file called `test.sh` with the following content:
+
+```{.bash}
+#!/bin/bash
+#BSUB -J test_job
+#BSUB -n 1
+#BSUB -W 00:10
+#BSUB -o output.%J
+#BSUB -e error.%J
+
+echo "Running test job on host: $(hostname)"
+sleep 60
+echo "Test job completed."
+```

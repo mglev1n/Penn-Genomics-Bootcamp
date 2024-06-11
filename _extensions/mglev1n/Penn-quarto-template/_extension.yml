@@ -1,0 +1,17 @@
+title: Penn-quarto-template
+author: Michael Levin
+version: 1.0.0
+contributes:
+  formats:
+    revealjs:
+      theme: [default, penn.scss]
+      logo: UniversityofPennsylvania_Shield_RGB.png
+      cap-location: top
+      fig-align: center
+      fig-dpi: 300
+      standalone: true
+      self-contained: true
+      self-contained-math: true
+      code-line-numbers: false
+      width: 1600
+      height: 900
