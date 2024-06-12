@@ -92,6 +92,7 @@ tibble(genotype = c("AA", "AC", "CC")) %>%
         axis.ticks.y = element_blank())
 ```
 
+... repeated for 10-40 million variants across the genome
 
 ## GWAS meta-analysis 
 
@@ -118,6 +119,16 @@ tibble::tribble(
 <br>
 
 ... repeated for 10-40 million variants across the genome
+
+
+## Why Perform GWAS Meta-Analysis?
+
+- Increases statistical power to detect novel associations that are not significant in individual studies
+- Provides new insights into genetic architecture of disease (eg. heritability, polygenicity, etc.)
+- Increases generalizability of results by combining data from multiple populations
+- Enables downstream analyses to identify causal variants, genes, pathways, etc.
+- Enables identification of new drug targets and causal risk factors (eg. Mendelian randomization)
+- Enables development of polygenic risk scores for disease prediction
 
 
 ## A Typical GWAS Meta-Analysis Project
@@ -398,8 +409,6 @@ When finished using RStudio Server, terminate the job:
 
 
 
-# -----------------------------------------
-
 # Appendix
 
 ## LSF test job
@@ -420,3 +429,8 @@ echo "Running test job on host: $(hostname)"
 sleep 60
 echo "Test job completed."
 ```
+
+<br>
+
+Submit using `bsub < test.sh`
+View runing jobs using `bjobs`
