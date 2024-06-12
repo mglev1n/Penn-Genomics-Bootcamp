@@ -333,6 +333,17 @@ Send job to the scheduler using `bsub`:
 bsub < test.sh
 ```
 
+## [Advanced] Workflow Orchestration
+
+- Because genomics projects are complex and include multiple inter-related analyses, it is often useful to automate the workflow
+- Workflow orchestration tools allow you to define the steps of the analysis and the dependencies between them
+- Common workflow orchestration tools include:
+  - Nextflow
+  - Cromwell
+  - WDL
+  - Snakemake (python-native)
+  - Targets (R-native)
+- These tools often handle scaling and parallelization automatically
 
 ## Rstudio on the LPC
 
