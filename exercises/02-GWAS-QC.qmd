@@ -27,7 +27,7 @@ install.packages("pak")
 ```
 
 ```{r}
-pak::pkg_install(c("tidyverse", "GWASinspector", "MungeSumstats", "rtracklayer", "vroom"), ask = FALSE)
+pak::pkg_install(c("tidyverse", "GWASinspector", "rtracklayer", "vroom"), ask = FALSE)
 ```
 
 Load the packages into the current session using `library()`
