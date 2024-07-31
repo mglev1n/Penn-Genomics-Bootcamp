@@ -133,7 +133,7 @@ locus_plots <- cad_locus_top5 %>%
   mutate(across(.cols = c(allele1, allele2), ~str_to_upper(.x))) %>% # make sure alleles are capitalized
   mutate(marker_id = glue::glue("{chromosome}:{position}:{allele2}:{allele1}")) %>% # give each variant a unique ID (could use rsid instead)
   group_nest(locus_marker) %>%
-  mutate(locus_plot = map(data, ~locusplotr::gg_locusplot(df = .x, rsid = marker_id, chrom = chromosome, pos = position, p_value = p_value, ref = allele1, alt = allele2, plot_genes = TRUE, plot_recombination = TRUE, genome_build = "GRCh38")))
+  mutate(locus_plot = map(data, ~locusplotr::gg_locusplot(df = .x, rsid = marker_id, chrom = chromosome, pos = position, effect = effect, std_err = std_err, ref = allele1, alt = allele2, plot_genes = TRUE, plot_recombination = TRUE, genome_build = "GRCh38")))
 
 locus_plots %>%
   pull(locus_plot) %>%
