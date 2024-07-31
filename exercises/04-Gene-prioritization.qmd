@@ -228,7 +228,37 @@ cad_magma_res <- cad_sumstats_annotated %>%
     magma_bin = "/project/voltron/Applications/magma_v1.10/magma",
     bfile = "/project/voltron/Resources/1000-Genomes-Phase3/MAGMA-1kg/g1000_eur",
     gene_file = "/project/voltron/Resources/MAGMA/NCBI37/NCBI37.genes.annot",
-    out_file = "/project/damrauer_shared/Users/mglevin/Penn/project/damrauer_shared/Users/mglevin/Penn-Genomics-Bootcamp/Results/cad_magma_res"
+    out_file = "/project/damrauer_shared/Users/mglevin/Penn-Genomics-Bootcamp/Results/cad_magma_res"
   )
+```
+Read the MAGMA results:
+
+```{r}
+cad_magma_res_annotated <- data.table::fread("../Results/cad_magma_res.genes.out") %>%
+  mutate(P_adj = p.adjust(P, method = "bonferroni")) %>%
+  # filter(P_adj < 0.05) %>%
+  as_tibble() %>%
+  mutate(CHR = as.character(CHR)) %>%
+  left_join(
+    data.table::fread("/project/voltron/Resources/MAGMA/NCBI37/NCBI37.3.gene.loc", col.names = c("GENE", "CHR", "START", "STOP", "STRAND", "NAME")) %>%
+      readr::type_convert()
+  )
+
+cad_magma_res_annotated %>%
+  mutate(label = case_when(
+    P_adj < 0.05 ~ NAME,
+    .default = NA
+  )) %>%
+  mutate(CHR = as.numeric(CHR)) %>%
+  ggplot(aes(START, -log10(P))) +
+  geom_point() +
+  ggrepel::geom_text_repel(aes(label = label)) +
+  facet_grid(cols = vars(CHR), switch = "x") +
+  labs(x = "Position",
+       y = "-log<sub>10</sub>(p-value)") +
+  theme_bw(base_size = 16) +
+  theme(
+      axis.title.y = ggtext::element_markdown()
+    )
 ```
 
