@@ -1,0 +1,234 @@
+---
+title: "Penn Genomics Summer Bootcamp"
+subtitle: "Exercises: Gene Prioritzation"
+date: last-modified
+format:
+  html:
+    code-tools: true
+    toc: true
+    toc-depth: 6
+    cap-location: top
+    self-contained: true
+    embed-resources: true
+    citations-hover: true
+fig-height: 4
+execute:
+  warning: false
+  message: false
+  echo: true
+csl: https://raw.githubusercontent.com/citation-style-language/styles/6152ccea8b7d7a472910d36524d1bf3557a83bfc/dependent/nature-genetics.csl
+bibliography: references.bib
+---
+
+```{r}
+library(tidyverse)
+library(vroom)
+library(gwasRtools)
+library(levinmisc)
+```
+
+## Variant-to-gene mapping
+
+GWAS identify regions of the genome associated with a trait/disease of interest. However, most genetic variation doesn't affect the coding sequence of genes. To better understand the biological mechanisms implicated by genetic variation, one approach is mapping variants to genes. This can be done using different methods, such as proximity-based methods (e.g. mapping variants to the nearest gene) or functional methods (e.g. using chromatin conformation data to map variants to genes). Here, we'll focus on a few common approaches.
+
+## Exercise 1: Mapping variants to the nearest gene
+
+This approach should be are refresher from our prior lectures. Here, we'll use the `gwasRtools` package to map variants to loci and their nearest genes. We'll use the `arrow` package to read/filter our summary statistics without loading them all into memory
+
+```{r}
+# load genome-wide significant variants
+cad_gws <- arrow::open_tsv_dataset("/project/damrauer_shared/Users/sabramow/CAD/METAL/cad_meta_GRCh38_metal-1.txt.gz") %>%
+  filter(`P-value` < 5e-8) %>%
+  collect() %>%
+  janitor::clean_names()
+
+# Identify loci and append nearest gene
+cad_loci <- cad_gws %>%
+  gwasRtools::get_loci(chr_col = "chromosome", pos_col = "position", beta_col = "effect", se_col = "std_err", p_col = "p_value", maf_col = "freq1", snp_col = "marker_name") %>%
+  filter(lead == TRUE) %>%
+  gwasRtools::get_nearest_gene(chr_col = "chromosome", pos_col = "position", snp_col = "marker_name", build = 38) %>%
+  arrange(p_value)
+
+cad_loci %>%
+  glimpse()
+```
+
+## Exercise 2: Approximate Bayesian Fine-Mapping
+
+Fine-mapping is an approach that allows us to prioritize the probability that any variant at a locus is causal. A simple form of fine-mapping, which relies on the Approximate Bayes Factor, follows an (unrealistic) assumption that there is a single causal variant at the locus of interest. An implementation of this approach is available in the `levinmisc` package, based on the method applied in Graham, et al. Nature 2021:
+
+| Graham, S.E., Clarke, S.L., Wu, KH.H. et al. The power of genetic diversity in genome-wide association studies of lipids. Nature 600, 675--679 (2021). https://doi.org/10.1038/s41586-021-04064-3
+
+First, we need to extract variants within 500kb of the lead variants at all of our loci. This will take a few minutes, so we'll just focus on the first locus for now. We'll make use of the `locus_extract` and `read_and_extract_locus` helper functions below:
+
+
+```{r}
+# Extract all variants +/- 500kb of genome-wide significant variant
+locus_extract <- function(sumstats_df, # df containing summary statistics
+                          sumstats_chr_col = chromosome,
+                          sumstats_pos_col = position,
+                          locus_df, # df containing gws loci
+                          locus_chr_col = chromosome,
+                          locus_pos_col = position,
+                          locus_size = 5e5) {
+  locus_df <- locus_df %>%
+    select(chromosome = {{ locus_chr_col }}, lead_pos = {{ locus_pos_col }}) %>%
+    distinct(chromosome, lead_pos)
+
+    sumstats_df %>%
+      rename(chromosome = {{ sumstats_chr_col }}, position = {{ sumstats_pos_col }}) %>%
+      mutate(chromosome = as.numeric(chromosome), position = as.numeric(position)) %>%
+      inner_join(locus_df) %>%
+      filter(between(position, lead_pos - locus_size / 2, lead_pos + locus_size / 2)) %>%
+      collect() %>%
+      mutate(locus_marker = glue::glue("{chromosome}:{lead_pos}")) %>%
+      select(locus_marker, chromosome, lead_pos, everything())
+}
+
+read_and_extract_locus <- function(sumstats_file, locus_df, ...) {
+  vroom::vroom(sumstats_file, id = "filename") %>%
+    locus_extract(locus_df = locus_df, ...)
+}
+
+cad_locus_top5 <- read_and_extract_locus(sumstats_file = "/project/damrauer_shared/Users/sabramow/CAD/METAL/cad_meta_GRCh38_metal-1.txt.gz", 
+                       sumstats_chr_col = Chromosome,
+                       sumstats_pos_col = Position,
+                       locus_df = cad_loci %>% head(5),
+                       locus_chr_col = chromosome,
+                       locus_pos_col = position, 
+                       locus_size = 5e5)
+
+cad_locus_top5 %>%
+  glimpse()
+```
+
+We see that we've extracted ~5000 variants within 500kb of our lead variants:
+
+```{r}
+cad_locus_top5 %>%
+  count(locus_marker)
+```
+
+Now, we can perform Approximate Bayes Factor fine-mapping:
+
+```{r}
+cad_top5_abf <- cad_locus_top5 %>%
+  mutate(n_effective = (4/(1/NCASE + 1/NCONTROL))) %>% # should probably use sum of effective sample sizes
+  levinmisc::calc_credset(locus_marker_col = locus_marker, effect_col = Effect, se_col = StdErr, samplesize_col = n_effective, cred_interval = 0.95)
+```
+
+We see that at 3 of the loci we've narrowed the credible sets to a single variant, while at the other 2 (LPA and 9p21) there are still several thousand variants:
+
+```{r}
+cad_top5_abf %>%
+  count(locus_marker)
+```
+
+If we create regional association plots, we see that this is because the LPA and 9p21 loci have multiple signals that are equivalently strong:
+
+```{r, fig.width=12, fig.height=16}
+
+locus_plots <- cad_locus_top5 %>%
+  janitor::clean_names() %>%
+  mutate(across(.cols = c(allele1, allele2), ~str_to_upper(.x))) %>% # make sure alleles are capitalized
+  mutate(marker_id = glue::glue("{chromosome}:{position}:{allele2}:{allele1}")) %>% # give each variant a unique ID (could use rsid instead)
+  group_nest(locus_marker) %>%
+  mutate(locus_plot = map(data, ~locusplotr::gg_locusplot(df = .x, rsid = marker_id, chrom = chromosome, pos = position, p_value = p_value, ref = allele1, alt = allele2, plot_genes = TRUE, plot_recombination = TRUE, genome_build = "GRCh38")))
+
+locus_plots %>%
+  pull(locus_plot) %>%
+  patchwork::wrap_plots(ncol = 2)
+```
+
+
+## Exercise 3: Annotating with OpenTargets data
+
+OpenTargets is a platform that integrates genetics, genomics, and drug data to aid in the identification and prioritization of drug targets. OpenTargets maintains a database of useful annotations, which we can use to further annotate our credible sets.
+
+```{r}
+# Function to annotate variants with OpenTargets data
+opentargets_annotate_consequence <- function(df, chr_col = chromosome, pos_col = position, effect_allele = Allele1, other_allele = Allele2, opentargets_index = "/project/voltron/Resources/OpenTargets/variant-index/", genome_build = "GRCh38") {
+ 
+  checkmate::assert_choice(genome_build, choices = c("GRCh37", "GRCh38"))
+  
+  df <- df %>% 
+    select(chromosome = {{ chr_col }}, position = {{ pos_col }}, effect_allele = {{ effect_allele }}, other_allele = {{ other_allele }}, everything()) %>%
+    mutate(chromosome = as.character(chromosome),
+           position = as.integer(position)) %>%
+    mutate(across(.cols = c(effect_allele, other_allele), ~str_to_upper(.x)))
+  
+  if(genome_build == "GRCh37") {
+    opentargets_res <- arrow::open_dataset(opentargets_index) %>%
+      select(rsid = rs_id, chromosome = chr_id_b37, position = position_b37, ref_allele, alt_allele, gene_id_prot_coding, most_severe_consequence) %>%
+      right_join(df, by = c("chromosome", "position")) %>%
+      collect()
+  } else{
+    opentargets_res <- arrow::open_dataset(opentargets_index) %>%
+      select(rsid = rs_id, chromosome = chr_id, position = position, ref_allele, alt_allele, gene_id_prot_coding, most_severe_consequence) %>%
+      right_join(df, by = c("chromosome", "position")) %>%
+      collect()
+  }
+  
+  # Match alleles
+  opentargets_res %>%
+    mutate(keep = case_when(
+      (ref_allele == effect_allele & alt_allele == other_allele) ~ TRUE,
+      (ref_allele == other_allele & alt_allele == effect_allele) ~ TRUE,
+      TRUE ~ FALSE
+    )) %>%
+    filter(keep) %>%
+    select(-ref_allele, -alt_allele, -effect_allele, -other_allele) %>%
+    right_join(df) %>%
+    select(-keep) %>%
+    select(rsid, {{ chr_col }} := chromosome, {{ pos_col }} := position, {{ effect_allele }} := effect_allele, {{ other_allele }} := other_allele, gene_id_prot_coding, most_severe_consequence, everything())
+}
+```
+
+Annotate our credible sets:
+
+```{r}
+cad_locus_top5_annotated <- cad_locus_top5 %>%
+  opentargets_annotate_consequence()
+
+cad_locus_top5_annotated %>%
+  glimpse()
+```
+
+We see that there are some coding variants (missense, frameshift, stopgain, stoploss, etc.), although most are intronic:
+
+```{r}
+cad_locus_top5_annotated %>%
+  count(most_severe_consequence)
+```
+
+## Exercise 4: MAGMA
+
+MAGMA is a tool that can be used for gene-based analysis of GWAS summary statistics:
+
+| de Leeuw CA, Mooij JM, Heskes T, Posthuma D (2015) MAGMA: Generalized Gene-Set Analysis of GWAS Data. PLoS Comput Biol 11(4): e1004219. https://doi.org/10.1371/journal.pcbi.1004219
+
+
+The `levinmisc` package has a function to run MAGMA. We'll use this on chromosome 10 as an example:
+
+```{r}
+cad_sumstats <- vroom::vroom("/project/damrauer_shared/Users/sabramow/CAD/METAL/cad_meta_GRCh38_metal-1.txt.gz")
+
+cad_sumstats_annotated <- cad_sumstats %>%
+  filter(Chromosome == 10) %>%
+  levinmisc::annotate_rsids(chrom_col = Chromosome, pos_col = Position, dbSNP = SNPlocs.Hsapiens.dbSNP144.GRCh38::SNPlocs.Hsapiens.dbSNP144.GRCh38)
+  
+cad_sumstats_annotated %>%
+  glimpse()
+
+cad_magma_res <- cad_sumstats_annotated %>%
+  levinmisc::magmar(
+    snp_col = rsid,
+    pval_col = P.value,
+    samplesize_col = SAMPLESIZE,
+    magma_bin = "/project/voltron/Applications/magma_v1.10/magma",
+    bfile = "/project/voltron/Resources/1000-Genomes-Phase3/MAGMA-1kg/g1000_eur",
+    gene_file = "/project/voltron/Resources/MAGMA/NCBI37/NCBI37.genes.annot",
+    out_file = "/project/damrauer_shared/Users/mglevin/Penn/project/damrauer_shared/Users/mglevin/Penn-Genomics-Bootcamp/Results/cad_magma_res"
+  )
+```
+
